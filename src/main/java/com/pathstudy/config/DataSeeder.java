@@ -1,9 +1,9 @@
 package com.pathstudy.config;
 
+import com.pathstudy.curriculum.domain.*;
+import com.pathstudy.curriculum.repository.*;
 import com.pathstudy.domain.*;
 import com.pathstudy.repo.*;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
@@ -12,21 +12,14 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Arrays;
 
 /**
- * Seeds demo content. Keyed on {@link #SEED_VERSION}: when the version changes,
- * existing content + learning progress is wiped and re-seeded (registered user
- * accounts are kept). This lets deployed environments pick up new curriculum
- * content on the next start. Bump SEED_VERSION whenever seeded content changes.
+ * Seeds demo and curriculum reference data idempotently. Learner-facing records
+ * are never deleted as part of reference-data seeding.
  *
  * Ngữ văn is organised by grade (Lớp 10 → 11 → 12); each work is one stage of
  * the personalized study path.
  */
 @Component
 public class DataSeeder implements CommandLineRunner {
-
-    private static final String SEED_VERSION = "2026-09-16-roles-cms-v3";
-
-    @PersistenceContext
-    private EntityManager entityManager;
 
     private final SubjectRepository subjects;
     private final CourseModuleRepository modules;
@@ -35,23 +28,27 @@ public class DataSeeder implements CommandLineRunner {
     private final QuestionRepository questions;
     private final UserRepository users;
     private final PasswordEncoder passwordEncoder;
-    private final AppSettingRepository appSettings;
-    private final EnrollmentRepository enrollments;
-    private final ModuleProgressRepository moduleProgress;
-    private final PlacementResultRepository placementResults;
-    private final EstimateResultRepository estimateResults;
-    private final BookmarkRepository bookmarks;
     private final MaterialRepository materials;
+    private final GradeRepository grades;
+    private final CurriculumRepository curricula;
+    private final CurriculumVersionRepository curriculumVersions;
+    private final CurriculumGradeRepository curriculumGrades;
+    private final CurriculumStructureNodeRepository structureNodes;
+    private final SkillRepository skills;
+    private final LearningObjectiveRepository learningObjectives;
+    private final LearningObjectiveCurriculumRepository objectiveCurricula;
+    private final ObjectiveStructureAlignmentRepository objectiveAlignments;
 
     private int order = 0; // running module order within a subject
 
     public DataSeeder(SubjectRepository subjects, CourseModuleRepository modules,
                       LessonRepository lessons, LessonSectionRepository sections,
                       QuestionRepository questions, UserRepository users,
-                      PasswordEncoder passwordEncoder, AppSettingRepository appSettings,
-                      EnrollmentRepository enrollments, ModuleProgressRepository moduleProgress,
-                      PlacementResultRepository placementResults, EstimateResultRepository estimateResults,
-                      BookmarkRepository bookmarks, MaterialRepository materials) {
+                      PasswordEncoder passwordEncoder, MaterialRepository materials,
+                      GradeRepository grades, CurriculumRepository curricula, CurriculumVersionRepository curriculumVersions,
+                      CurriculumGradeRepository curriculumGrades, CurriculumStructureNodeRepository structureNodes,
+                      SkillRepository skills, LearningObjectiveRepository learningObjectives,
+                      LearningObjectiveCurriculumRepository objectiveCurricula, ObjectiveStructureAlignmentRepository objectiveAlignments) {
         this.subjects = subjects;
         this.modules = modules;
         this.lessons = lessons;
@@ -59,46 +56,23 @@ public class DataSeeder implements CommandLineRunner {
         this.questions = questions;
         this.users = users;
         this.passwordEncoder = passwordEncoder;
-        this.appSettings = appSettings;
-        this.enrollments = enrollments;
-        this.moduleProgress = moduleProgress;
-        this.placementResults = placementResults;
-        this.estimateResults = estimateResults;
-        this.bookmarks = bookmarks;
         this.materials = materials;
+        this.grades = grades; this.curricula = curricula; this.curriculumVersions = curriculumVersions;
+        this.curriculumGrades = curriculumGrades; this.structureNodes = structureNodes; this.skills = skills;
+        this.learningObjectives = learningObjectives; this.objectiveCurricula = objectiveCurricula;
+        this.objectiveAlignments = objectiveAlignments;
     }
 
     @Override
     @Transactional
     public void run(String... args) {
-        String current = appSettings.findById("seedVersion").map(AppSetting::getValue).orElse(null);
-        if (SEED_VERSION.equals(current)) {
-            return;
-        }
-        wipeContent();
         seedSubjects();
         seedUsers();
-        seedVanContent(subjects.findByCode("van").orElseThrow());
-        appSettings.save(new AppSetting("seedVersion", SEED_VERSION));
-    }
-
-    /** Removes seeded content and learning progress (FK-safe order). Keeps user accounts. */
-    private void wipeContent() {
-        bookmarks.deleteAll();
-        estimateResults.deleteAll();
-        placementResults.deleteAll();
-        moduleProgress.deleteAll();
-        enrollments.deleteAll();
-        materials.deleteAll();
-        questions.deleteAll();
-        sections.deleteAll();
-        lessons.deleteAll();
-        modules.deleteAll();
-        subjects.deleteAll();
-        // Force the deletes to hit the DB now. Otherwise Hibernate defers them and,
-        // within one transaction, executes the seed INSERTs before these DELETEs,
-        // causing a duplicate-key error when data already exists (e.g. on redeploy).
-        entityManager.flush();
+        Subject van = subjects.findByCode("van").orElseThrow();
+        if (modules.findBySubjectOrderByOrderIndexAsc(van).isEmpty()) {
+            seedVanContent(van);
+        }
+        seedCurriculumReferenceData(van);
     }
 
     private void seedSubjects() {
@@ -466,11 +440,61 @@ public class DataSeeder implements CommandLineRunner {
                 Competency.APPLICATION, 1, "Chép lại đề bài", "Xác định luận điểm và câu chủ đề", "Kể tiểu sử tác giả", "Viết kết bài trước");
     }
 
+    private void seedCurriculumReferenceData(Subject subject) {
+        Grade grade10 = grade("THPT_10", 10, "Lớp 10");
+        Grade grade11 = grade("THPT_11", 11, "Lớp 11");
+        Grade grade12 = grade("THPT_12", 12, "Lớp 12");
+
+        Curriculum curriculum = curricula.findBySubjectCodeOrderByCode(subject.getCode()).stream()
+                .filter(item -> "THPT_CORE".equals(item.getCode())).findFirst().orElseGet(Curriculum::new);
+        curriculum.setSubject(subject); curriculum.setCode("THPT_CORE"); curriculum.setName("Chương trình THPT cốt lõi");
+        curriculum.setDescription("Dữ liệu tham chiếu tối thiểu cho lộ trình THPT.");
+        curriculum = curricula.save(curriculum);
+
+        Curriculum finalCurriculum = curriculum;
+        CurriculumVersion version = curriculumVersions.findAll().stream()
+                .filter(item -> item.getCurriculum().getId().equals(finalCurriculum.getId()) && "2026.1".equals(item.getVersionCode()))
+                .findFirst().orElseGet(CurriculumVersion::new);
+        version.setCurriculum(curriculum); version.setVersionCode("2026.1"); version.setStatus(CurriculumVersionStatus.PUBLISHED);
+        version.setRevisionNote("Initial minimal reference release."); version = curriculumVersions.save(version);
+        CurriculumGrade cg10 = curriculumGrade(version, grade10, "Lớp 10", 10);
+        curriculumGrade(version, grade11, "Lớp 11", 11); curriculumGrade(version, grade12, "Lớp 12", 12);
+
+        CurriculumVersion finalVersion = version;
+        CurriculumStructureNode domain = structureNodes.findAll().stream().filter(node -> node.getCurriculumVersion().getId().equals(finalVersion.getId()) && "LITERACY".equals(node.getCode())).findFirst().orElseGet(CurriculumStructureNode::new);
+        domain.setCurriculumVersion(version); domain.setType(CurriculumStructureNodeType.DOMAIN); domain.setCode("LITERACY"); domain.setTitle("Đọc hiểu văn bản"); domain.setOrderIndex(1); domain = structureNodes.save(domain);
+        CurriculumStructureNode topic = structureNodes.findAll().stream().filter(node -> node.getCurriculumVersion().getId().equals(finalVersion.getId()) && "READING_FOUNDATIONS".equals(node.getCode())).findFirst().orElseGet(CurriculumStructureNode::new);
+        topic.setCurriculumVersion(version); topic.setCurriculumGrade(cg10); topic.setParent(domain); topic.setType(CurriculumStructureNodeType.TOPIC); topic.setCode("READING_FOUNDATIONS"); topic.setTitle("Nền tảng đọc hiểu"); topic.setOrderIndex(1); topic = structureNodes.save(topic);
+
+        Skill skill = skills.findAll().stream().filter(item -> item.getSubject().getId().equals(subject.getId()) && "READ_TEXT".equals(item.getCode())).findFirst().orElseGet(Skill::new);
+        skill.setSubject(subject); skill.setCode("READ_TEXT"); skill.setName("Đọc hiểu văn bản"); skill.setDescription("Xác định và giải thích nội dung, hình thức văn bản."); skill.setActive(true); skill = skills.save(skill);
+        LearningObjective objective = learningObjectives.findAll().stream().filter(item -> item.getSubject().getId().equals(subject.getId()) && "READ_MAIN_IDEA".equals(item.getCode())).findFirst().orElseGet(LearningObjective::new);
+        objective.setSubject(subject); objective.setPrimarySkill(skill); objective.setCode("READ_MAIN_IDEA"); objective.setStatement("Xác định ý chính của một văn bản."); objective.setCognitiveLevel(CognitiveLevel.UNDERSTAND); objective.setActive(true); objective = learningObjectives.save(objective);
+        LearningObjective finalObjective = objective;
+        CurriculumStructureNode finalTopic = topic;
+        if (objectiveCurricula.findByCurriculumGradeIdOrderBySequence(cg10.getId()).stream().noneMatch(item -> item.getLearningObjective().getId().equals(finalObjective.getId()))) {
+            LearningObjectiveCurriculum mapping = new LearningObjectiveCurriculum(); mapping.setLearningObjective(objective); mapping.setCurriculumGrade(cg10); mapping.setSequence(1); mapping.setRequired(true); objectiveCurricula.save(mapping);
+        }
+        if (objectiveAlignments.findAll().stream().noneMatch(item -> item.getLearningObjective().getId().equals(finalObjective.getId()) && item.getCurriculumStructureNode().getId().equals(finalTopic.getId()) && item.getRole() == ObjectiveStructureAlignmentRole.PRIMARY)) {
+            ObjectiveStructureAlignment alignment = new ObjectiveStructureAlignment(); alignment.setLearningObjective(objective); alignment.setCurriculumStructureNode(topic); alignment.setRole(ObjectiveStructureAlignmentRole.PRIMARY); alignment.setOrderIndex(1); objectiveAlignments.save(alignment);
+        }
+    }
+
+    private Grade grade(String code, int ordinal, String label) {
+        Grade grade = grades.findByCode(code).orElseGet(Grade::new);
+        grade.setCode(code); grade.setOrdinal(ordinal); grade.setLabel(label); return grades.save(grade);
+    }
+
+    private CurriculumGrade curriculumGrade(CurriculumVersion version, Grade grade, String title, int orderIndex) {
+        CurriculumGrade mapping = curriculumGrades.findAll().stream().filter(item -> item.getCurriculumVersion().getId().equals(version.getId()) && item.getGrade().getId().equals(grade.getId())).findFirst().orElseGet(CurriculumGrade::new);
+        mapping.setCurriculumVersion(version); mapping.setGrade(grade); mapping.setTitle(title); mapping.setOrderIndex(orderIndex); return curriculumGrades.save(mapping);
+    }
+
     // ---------- helpers ----------
 
     private Subject subject(String code, String name, String icon, String color,
                             int idx, boolean active, String desc) {
-        Subject s = new Subject();
+        Subject s = subjects.findByCode(code).orElseGet(Subject::new);
         s.setCode(code);
         s.setName(name);
         s.setIconKey(icon);
