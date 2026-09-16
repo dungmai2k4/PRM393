@@ -1,0 +1,1 @@
+package com.pathstudy.assessment.repository; import com.pathstudy.assessment.domain.QuestionVersion; import org.springframework.data.jpa.repository.JpaRepository; import java.util.Optional; public interface QuestionVersionRepository extends JpaRepository<QuestionVersion,Long> { Optional<QuestionVersion> findByQuestionFamilyIdAndRevisionNo(Long familyId,int revisionNo); }

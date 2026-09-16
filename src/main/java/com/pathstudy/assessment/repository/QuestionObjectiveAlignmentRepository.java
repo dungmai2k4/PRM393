@@ -1,0 +1,1 @@
+package com.pathstudy.assessment.repository; import com.pathstudy.assessment.domain.QuestionObjectiveAlignment; import org.springframework.data.jpa.repository.JpaRepository; public interface QuestionObjectiveAlignmentRepository extends JpaRepository<QuestionObjectiveAlignment,Long> { }

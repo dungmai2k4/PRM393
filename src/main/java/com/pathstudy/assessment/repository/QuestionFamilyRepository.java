@@ -1,0 +1,1 @@
+package com.pathstudy.assessment.repository; import com.pathstudy.assessment.domain.QuestionFamily; import org.springframework.data.jpa.repository.JpaRepository; import java.util.Optional; public interface QuestionFamilyRepository extends JpaRepository<QuestionFamily,Long> { Optional<QuestionFamily> findBySubjectIdAndStableCode(Long subjectId,String stableCode); }

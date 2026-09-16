@@ -1,0 +1,1 @@
+package com.pathstudy.assessment.repository; import com.pathstudy.assessment.domain.AssessmentAttempt; import org.springframework.data.jpa.repository.JpaRepository; public interface AssessmentAttemptRepository extends JpaRepository<AssessmentAttempt,Long> { long countByUserIdAndAssessmentVersionId(Long userId,Long assessmentVersionId); }

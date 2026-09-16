@@ -1,5 +1,7 @@
 package com.pathstudy.config;
 
+import com.pathstudy.assessment.domain.*;
+import com.pathstudy.assessment.repository.*;
 import com.pathstudy.curriculum.domain.*;
 import com.pathstudy.curriculum.repository.*;
 import com.pathstudy.domain.*;
@@ -38,6 +40,13 @@ public class DataSeeder implements CommandLineRunner {
     private final LearningObjectiveRepository learningObjectives;
     private final LearningObjectiveCurriculumRepository objectiveCurricula;
     private final ObjectiveStructureAlignmentRepository objectiveAlignments;
+    private final QuestionFamilyRepository questionFamilies;
+    private final QuestionVersionRepository questionVersions;
+    private final QuestionOptionRepository assessmentQuestionOptions;
+    private final QuestionObjectiveAlignmentRepository questionObjectiveAlignments;
+    private final AssessmentDefinitionRepository assessmentDefinitions;
+    private final AssessmentVersionRepository assessmentVersions;
+    private final AssessmentItemRepository assessmentItems;
 
     private int order = 0; // running module order within a subject
 
@@ -48,7 +57,11 @@ public class DataSeeder implements CommandLineRunner {
                       GradeRepository grades, CurriculumRepository curricula, CurriculumVersionRepository curriculumVersions,
                       CurriculumGradeRepository curriculumGrades, CurriculumStructureNodeRepository structureNodes,
                       SkillRepository skills, LearningObjectiveRepository learningObjectives,
-                      LearningObjectiveCurriculumRepository objectiveCurricula, ObjectiveStructureAlignmentRepository objectiveAlignments) {
+                      LearningObjectiveCurriculumRepository objectiveCurricula, ObjectiveStructureAlignmentRepository objectiveAlignments,
+                      QuestionFamilyRepository questionFamilies, QuestionVersionRepository questionVersions,
+                      QuestionOptionRepository assessmentQuestionOptions, QuestionObjectiveAlignmentRepository questionObjectiveAlignments,
+                      AssessmentDefinitionRepository assessmentDefinitions, AssessmentVersionRepository assessmentVersions,
+                      AssessmentItemRepository assessmentItems) {
         this.subjects = subjects;
         this.modules = modules;
         this.lessons = lessons;
@@ -61,6 +74,9 @@ public class DataSeeder implements CommandLineRunner {
         this.curriculumGrades = curriculumGrades; this.structureNodes = structureNodes; this.skills = skills;
         this.learningObjectives = learningObjectives; this.objectiveCurricula = objectiveCurricula;
         this.objectiveAlignments = objectiveAlignments;
+        this.questionFamilies = questionFamilies; this.questionVersions = questionVersions;
+        this.assessmentQuestionOptions = assessmentQuestionOptions; this.questionObjectiveAlignments = questionObjectiveAlignments;
+        this.assessmentDefinitions = assessmentDefinitions; this.assessmentVersions = assessmentVersions; this.assessmentItems = assessmentItems;
     }
 
     @Override
@@ -73,6 +89,7 @@ public class DataSeeder implements CommandLineRunner {
             seedVanContent(van);
         }
         seedCurriculumReferenceData(van);
+        seedAssessmentDemo(van);
     }
 
     private void seedSubjects() {
@@ -477,6 +494,41 @@ public class DataSeeder implements CommandLineRunner {
         }
         if (objectiveAlignments.findAll().stream().noneMatch(item -> item.getLearningObjective().getId().equals(finalObjective.getId()) && item.getCurriculumStructureNode().getId().equals(finalTopic.getId()) && item.getRole() == ObjectiveStructureAlignmentRole.PRIMARY)) {
             ObjectiveStructureAlignment alignment = new ObjectiveStructureAlignment(); alignment.setLearningObjective(objective); alignment.setCurriculumStructureNode(topic); alignment.setRole(ObjectiveStructureAlignmentRole.PRIMARY); alignment.setOrderIndex(1); objectiveAlignments.save(alignment);
+        }
+    }
+
+    /** Tiny, idempotent reference assessment only; it does not replace legacy placement questions. */
+    private void seedAssessmentDemo(Subject subject) {
+        CurriculumVersion curriculumVersion = curriculumVersions.findFirstByCurriculumSubjectCodeAndStatusOrderByEffectiveFromDesc(subject.getCode(), CurriculumVersionStatus.PUBLISHED).orElseThrow();
+        LearningObjective objective = learningObjectives.findAll().stream().filter(item -> item.getSubject().getId().equals(subject.getId()) && "READ_MAIN_IDEA".equals(item.getCode())).findFirst().orElseThrow();
+
+        QuestionFamily family = questionFamilies.findBySubjectIdAndStableCode(subject.getId(), "VAN-Q-IMAGERY-001").orElseGet(QuestionFamily::new);
+        family.setSubject(subject); family.setStableCode("VAN-Q-IMAGERY-001"); family.setInternalName("Nhận diện hình tượng sóng"); family = questionFamilies.save(family);
+        QuestionVersion question = questionVersions.findByQuestionFamilyIdAndRevisionNo(family.getId(), 1).orElseGet(QuestionVersion::new);
+        if (question.getId() == null) {
+            question.setQuestionFamily(family); question.setRevisionNo(1); question.setStatus(VersionStatus.PUBLISHED); question.setQuestionType(QuestionType.SINGLE_CHOICE);
+            question.setPrompt("Hình tượng \"sóng\" trong thơ Xuân Quỳnh chủ yếu là ẩn dụ cho:"); question.setExplanation("Sóng là hình tượng soi chiếu tâm hồn và tình yêu của người phụ nữ."); question.setDifficulty(2); question.setCurriculumVersion(curriculumVersion); question.setPublishedAt(java.time.LocalDateTime.now()); question = questionVersions.save(question);
+        }
+        QuestionVersion finalQuestion = question;
+        String[] options = {"Cảnh biển", "Tâm hồn người phụ nữ đang yêu", "Cuộc kháng chiến", "Thời gian"};
+        for (int index = 0; index < options.length; index++) {
+            final int optionIndex = index;
+            if (assessmentQuestionOptions.findByQuestionVersionIdOrderByOptionIndexAsc(question.getId()).stream().noneMatch(item -> item.getOptionIndex() == optionIndex)) {
+                QuestionOption option = new QuestionOption(); option.setQuestionVersion(finalQuestion); option.setOptionIndex(optionIndex); option.setContent(options[optionIndex]); option.setCorrect(optionIndex == 1); assessmentQuestionOptions.save(option);
+            }
+        }
+        if (questionObjectiveAlignments.findAll().stream().noneMatch(item -> item.getQuestionVersion().getId().equals(finalQuestion.getId()) && item.getLearningObjective().getId().equals(objective.getId()))) {
+            QuestionObjectiveAlignment alignment = new QuestionObjectiveAlignment(); alignment.setQuestionVersion(question); alignment.setLearningObjective(objective); alignment.setMeasurementWeight(java.math.BigDecimal.ONE); alignment.setEvidenceStrength(java.math.BigDecimal.ONE); alignment.setCognitiveLevel(CognitiveLevel.UNDERSTAND); questionObjectiveAlignments.save(alignment);
+        }
+        AssessmentDefinition definition = assessmentDefinitions.findBySubjectIdAndStableCode(subject.getId(), "VAN-DIAGNOSTIC-DEMO").orElseGet(AssessmentDefinition::new);
+        definition.setSubject(subject); definition.setStableCode("VAN-DIAGNOSTIC-DEMO"); definition.setName("Chẩn đoán Ngữ văn (demo)"); definition.setType(AssessmentType.DIAGNOSTIC); definition.setDescription("Một câu hỏi tham chiếu tối thiểu cho Phase 2, không phải ngân hàng câu hỏi hoàn chỉnh."); definition = assessmentDefinitions.save(definition);
+        AssessmentVersion assessment = assessmentVersions.findAll().stream().filter(item -> item.getAssessmentDefinition().getId().equals(definition.getId()) && item.getRevisionNo() == 1).findFirst().orElseGet(AssessmentVersion::new);
+        if (assessment.getId() == null) {
+            assessment.setAssessmentDefinition(definition); assessment.setRevisionNo(1); assessment.setStatus(VersionStatus.PUBLISHED); assessment.setCurriculumVersion(curriculumVersion); assessment.setTargetGrade(10); assessment.setInstructions("Chọn một đáp án đúng nhất."); assessment.setPublishedAt(java.time.LocalDateTime.now()); assessment = assessmentVersions.save(assessment);
+        }
+        AssessmentVersion finalAssessment = assessment;
+        if (assessmentItems.findByAssessmentVersionIdOrderBySequenceNoAsc(assessment.getId()).stream().noneMatch(item -> item.getQuestionVersion().getId().equals(finalQuestion.getId()))) {
+            AssessmentItem item = new AssessmentItem(); item.setAssessmentVersion(finalAssessment); item.setQuestionVersion(finalQuestion); item.setSequenceNo(1); item.setPoints(java.math.BigDecimal.ONE); item.setRequired(true); assessmentItems.save(item);
         }
     }
 
