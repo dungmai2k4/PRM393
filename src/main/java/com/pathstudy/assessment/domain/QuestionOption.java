@@ -1,0 +1,4 @@
+package com.pathstudy.assessment.domain;
+import com.pathstudy.curriculum.domain.AuditedEntity; import jakarta.persistence.*; import lombok.*;
+@Entity @Table(name="assessment_question_options", uniqueConstraints=@UniqueConstraint(name="uk_question_option_version_index",columnNames={"question_version_id","option_index"}), indexes=@Index(name="idx_question_option_version",columnList="question_version_id"))
+@Getter @Setter @NoArgsConstructor public class QuestionOption extends AuditedEntity { @Id @GeneratedValue(strategy=GenerationType.IDENTITY) private Long id; @ManyToOne(fetch=FetchType.LAZY,optional=false) @JoinColumn(name="question_version_id",nullable=false) private QuestionVersion questionVersion; @Column(name="option_index",nullable=false) private int optionIndex; @Column(nullable=false,length=2000) private String content; @Column(name="is_correct",nullable=false) private boolean correct; }

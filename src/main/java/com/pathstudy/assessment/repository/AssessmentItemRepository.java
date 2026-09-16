@@ -1,0 +1,1 @@
+package com.pathstudy.assessment.repository; import com.pathstudy.assessment.domain.AssessmentItem; import org.springframework.data.jpa.repository.JpaRepository; import java.util.List; public interface AssessmentItemRepository extends JpaRepository<AssessmentItem,Long> { List<AssessmentItem> findByAssessmentVersionIdOrderBySequenceNoAsc(Long assessmentVersionId); }

@@ -1,0 +1,1 @@
+package com.pathstudy.assessment.repository; import com.pathstudy.assessment.domain.AssessmentVersion; import org.springframework.data.jpa.repository.JpaRepository; public interface AssessmentVersionRepository extends JpaRepository<AssessmentVersion,Long> { }
